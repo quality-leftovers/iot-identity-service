@@ -432,12 +432,15 @@ pub(crate) unsafe extern "C" fn decrypt(
             | crate::AZIOT_KEYS_ENCRYPT_MECHANISM_DERIVED => {
                 crate::key::decrypt(&locations, mechanism, parameters, ciphertext)?
             }
+            crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_NO_PADDING
+            | crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_PKCS1 => {
+                crate::key_pair::decrypt(&locations, mechanism, parameters, ciphertext)?
+            }
 
             _ => return Err(err_invalid_parameter("mechanism", "unrecognized value")),
         };
 
         let actual_plaintext_len = *plaintext_len_out.as_ref();
-
         *plaintext_len_out.as_mut() = expected_plaintext_len;
 
         if !plaintext.is_null() {
@@ -448,7 +451,6 @@ pub(crate) unsafe extern "C" fn decrypt(
             }
 
             let plaintext_out = std::slice::from_raw_parts_mut(plaintext, actual_plaintext_len);
-
             plaintext_out[..expected_plaintext_len].copy_from_slice(&expected_plaintext);
             *plaintext_len_out.as_mut() = expected_plaintext_len;
         }

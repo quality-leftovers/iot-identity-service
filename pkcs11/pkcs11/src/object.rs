@@ -304,6 +304,11 @@ pub enum RsaSignMechanism {
     X509,
 }
 
+pub enum RsaEncryptionMechanism {
+    Pkcs1,
+    X509,
+}
+
 impl Object<openssl::rsa::Rsa<openssl::pkey::Private>> {
     /// Use this key to sign the given digest with the given mechanism type and store the result into the given signature buffer.
     pub fn sign(
@@ -323,6 +328,41 @@ impl Object<openssl::rsa::Rsa<openssl::pkey::Private>> {
             let signature_len =
                 sign_inner(&self.session, self.handle, mechanism, digest, signature)?;
             Ok(signature_len)
+        }
+    }
+
+    /// Use this key to decrypt the given digest with the given mechanism type and store the result into the given plaintext buffer.
+    pub fn decrypt(
+        &self,
+        mechanism: &RsaEncryptionMechanism,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<pkcs11_sys::CK_ULONG, DecryptError> {
+        unsafe {
+            // Decrypting with the private key needs login
+            self.session.login().map_err(DecryptError::LoginFailed)?;
+
+            let mechanism = match mechanism {
+                RsaEncryptionMechanism::X509 => pkcs11_sys::CK_MECHANISM_IN {
+                    mechanism: pkcs11_sys::CKM_RSA_X509,
+                    pParameter: std::ptr::null(),
+                    ulParameterLen: 0,
+                },
+                RsaEncryptionMechanism::Pkcs1 => pkcs11_sys::CK_MECHANISM_IN {
+                    mechanism: pkcs11_sys::CKM_RSA_PKCS,
+                    pParameter: std::ptr::null(),
+                    ulParameterLen: 0,
+                },
+            };
+
+            let plaintext_len = decrypt_inner(
+                &self.session,
+                self.handle,
+                &mechanism,
+                ciphertext,
+                plaintext,
+            )?;
+            Ok(plaintext_len)
         }
     }
 }

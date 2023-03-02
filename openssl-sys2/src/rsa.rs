@@ -2,6 +2,8 @@
 
 //! `rsa.h`
 
+pub const RSA_FLAG_EXT_PKEY: std::os::raw::c_int = 0x0020;
+
 extern "C" {
     pub fn RSA_get_ex_data(
         r: *const openssl_sys::RSA,

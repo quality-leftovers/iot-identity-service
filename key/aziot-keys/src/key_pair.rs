@@ -532,6 +532,111 @@ pub(crate) unsafe fn encrypt(
     Ok((result_len, result))
 }
 
+pub(crate) unsafe fn decrypt(
+    locations: &[crate::implementation::Location],
+    mechanism: crate::AZIOT_KEYS_ENCRYPT_MECHANISM,
+    _parameters: *const std::ffi::c_void,
+    ciphertext: &[u8],
+) -> Result<(usize, Vec<u8>), crate::AZIOT_KEYS_RC> {
+    let key_pair = match load_inner(locations)? {
+        Some(key_pair) => key_pair,
+        None => {
+            return Err(crate::implementation::err_invalid_parameter(
+                "id",
+                "key not found",
+            ))
+        }
+    };
+
+    let (result_len, result) = match key_pair {
+        KeyPair::FileSystem(_, private_key) => {
+            let padding = match mechanism {
+                crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_PKCS1 => openssl::rsa::Padding::PKCS1,
+                crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_NO_PADDING => openssl::rsa::Padding::NONE,
+                _ => {
+                    return Err(crate::implementation::err_invalid_parameter(
+                        "mechanism",
+                        "unrecognized value",
+                    ))
+                }
+            };
+
+            let rsa = private_key.rsa().map_err(|_e| {
+                crate::implementation::err_invalid_parameter("mechanism", "not an RSA key")
+            })?;
+
+            let result_len = rsa.size().try_into().map_err(|err| {
+                crate::implementation::err_external(format!(
+                    "RSA_size returned invalid value: {}",
+                    err
+                ))
+            })?;
+            let mut result = vec![0_u8; result_len];
+
+            let result_len = rsa.private_decrypt(ciphertext, &mut result, padding)?;
+            result.truncate(result_len);
+            (result_len, result)
+        }
+
+        KeyPair::Pkcs11(pkcs11::KeyPair::Ec(_, _)) => {
+            return Err(crate::implementation::err_invalid_parameter(
+                "mechanism",
+                "unrecognized value",
+            ))
+        }
+
+        KeyPair::Pkcs11(pkcs11::KeyPair::Rsa(public_key, private_key)) => {
+            let mechanism = match mechanism {
+                crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_PKCS1 => {
+                    pkcs11::RsaEncryptionMechanism::Pkcs1
+                }
+                crate::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_NO_PADDING => {
+                    pkcs11::RsaEncryptionMechanism::X509
+                }
+                _ => {
+                    return Err(crate::implementation::err_invalid_parameter(
+                        "mechanism",
+                        "unrecognized value",
+                    ))
+                }
+            };
+
+            let result_len = {
+                let rsa = public_key.parameters().map_err(|err| {
+                    crate::implementation::err_external(format!(
+                        "could not get key pair parameters: {}",
+                        err
+                    ))
+                })?;
+
+                let result_len = rsa.size().try_into().map_err(|err| {
+                    crate::implementation::err_external(format!(
+                        "RSA_size returned invalid value: {}",
+                        err
+                    ))
+                })?;
+                result_len
+            };
+
+            let result = {
+                let mut plaintext = vec![0_u8; result_len];
+                let plaintext_len = private_key
+                    .decrypt(&mechanism, ciphertext, &mut plaintext)
+                    .map_err(|err| {
+                        crate::implementation::err_external(format!("could not encrypt: {}", err))
+                    })?;
+                let plaintext_len = plaintext_len.try_into().expect("CK_ULONG -> usize");
+                plaintext.truncate(plaintext_len);
+                plaintext
+            };
+
+            (result_len, result)
+        }
+    };
+
+    Ok((result_len, result))
+}
+
 enum KeyPair {
     FileSystem(
         openssl::pkey::PKey<openssl::pkey::Public>,

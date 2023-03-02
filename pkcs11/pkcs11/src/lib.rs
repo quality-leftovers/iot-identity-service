@@ -23,8 +23,8 @@ mod dl;
 
 mod object;
 pub use object::{
-    DecryptError, EncryptError, GetKeyParametersError, Object, RsaSignMechanism, SignError,
-    VerifyError,
+    DecryptError, EncryptError, GetKeyParametersError, Object, RsaEncryptionMechanism,
+    RsaSignMechanism, SignError, VerifyError,
 };
 
 mod session;

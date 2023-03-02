@@ -129,13 +129,50 @@ unsafe extern "C" fn aziot_key_rsa_method_priv_enc(
 }
 
 unsafe extern "C" fn aziot_key_rsa_method_priv_dec(
-    _flen: std::os::raw::c_int,
-    _from: *const std::os::raw::c_uchar,
-    _to: *mut std::os::raw::c_uchar,
-    _rsa: *mut openssl_sys::RSA,
-    _padding: std::os::raw::c_int,
+    flen: std::os::raw::c_int,
+    from: *const std::os::raw::c_uchar,
+    to: *mut std::os::raw::c_uchar,
+    rsa: *mut openssl_sys::RSA,
+    padding: std::os::raw::c_int,
 ) -> std::os::raw::c_int {
-    // TODO
+    let result = super::r#catch(Some(|| super::Error::AZIOT_KEY_RSA_PRIV_DEC), || {
+        let crate::ex_data::KeyExData { client, handle } = crate::ex_data::get(&*rsa)?;
 
-    -1
+        let (mechanism, padding_len) = match padding {
+            openssl_sys::RSA_PKCS1_PADDING => (aziot_key_common::EncryptMechanism::RsaPkcs1, 11),
+            openssl_sys::RSA_NO_PADDING => (aziot_key_common::EncryptMechanism::RsaNoPadding, 0),
+            padding => {
+                return Err(format!("unrecognized RSA padding scheme 0x{:08x}", padding).into())
+            }
+        };
+
+        let digest = std::slice::from_raw_parts(from, flen.try_into().expect("c_int -> usize"));
+
+        let plaintext = client.decrypt(handle, mechanism, digest)?;
+        let plaintext_len = plaintext.len();
+        {
+            let max_plaintext_len = {
+                let rsa: &openssl::rsa::RsaRef<openssl::pkey::Private> =
+                    foreign_types_shared::ForeignTypeRef::from_ptr(rsa);
+                (rsa.size() - padding_len)
+                    .try_into()
+                    .expect("c_int -> usize")
+            };
+            if plaintext_len > max_plaintext_len {
+                return Err(format!("openssl expected plaintext of length <= {} but ks returned a plaintext of length {}", max_plaintext_len, plaintext_len).into());
+            }
+        }
+
+        // openssl requires that `to` has space for `RSA_size(rsa)` bytes. Trust the caller.
+        let plaintext_out = std::slice::from_raw_parts_mut(to, plaintext_len);
+        plaintext_out[..plaintext_len].copy_from_slice(&plaintext);
+
+        let plaintext_len = plaintext_len.try_into().expect("usize -> c_int");
+
+        Ok(plaintext_len)
+    });
+    match result {
+        Ok(plaintext_len) => plaintext_len,
+        Err(()) => -1,
+    }
 }

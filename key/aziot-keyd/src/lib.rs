@@ -482,6 +482,24 @@ impl Api {
                 )?
             }
 
+            (KeyId::KeyPair(_), aziot_key_common::EncryptMechanism::RsaPkcs1) => {
+                self.keys.decrypt(
+                    &id_cstr,
+                    keys::sys::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_PKCS1,
+                    std::ptr::null(),
+                    ciphertext,
+                )?
+            }
+
+            (KeyId::KeyPair(_), aziot_key_common::EncryptMechanism::RsaNoPadding) => {
+                self.keys.decrypt(
+                    &id_cstr,
+                    keys::sys::AZIOT_KEYS_ENCRYPT_MECHANISM_RSA_NO_PADDING,
+                    std::ptr::null(),
+                    ciphertext,
+                )?
+            }
+
             _ => {
                 return Err(Error::invalid_parameter(
                     "mechanism",
