@@ -2067,6 +2067,7 @@ dependencies = [
  "openssl2",
  "percent-encoding",
  "pkcs11-sys",
+ "rand",
  "serde",
 ]
 

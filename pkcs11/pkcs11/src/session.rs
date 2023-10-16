@@ -1,5 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+use rand::Rng;
+
 pub struct Session {
     pub(crate) context: std::sync::Arc<crate::Context>,
     pub(crate) handle: pkcs11_sys::CK_SESSION_HANDLE,
@@ -778,16 +780,26 @@ impl Session {
         ),
         GenerateKeyPairError,
     > {
+        let cka_id = rand::thread_rng().gen::<[u8; 16]>();
         unsafe {
             let oid = curve.as_oid_der();
 
-            let public_key_template = vec![pkcs11_sys::CK_ATTRIBUTE_IN {
-                r#type: pkcs11_sys::CKA_EC_PARAMS,
-                pValue: oid.as_ptr().cast(),
-                ulValueLen: oid.len().try_into().expect("usize -> CK_ULONG"),
-            }];
+            let cka_id_attrib = pkcs11_sys::CK_ATTRIBUTE_IN {
+                r#type: pkcs11_sys::CKA_ID,
+                pValue: cka_id.as_ptr().cast(),
+                ulValueLen: cka_id.len().try_into().expect("usize -> CK_ULONG"),
+            };
 
-            let private_key_template = vec![];
+            let public_key_template = vec![
+                pkcs11_sys::CK_ATTRIBUTE_IN {
+                    r#type: pkcs11_sys::CKA_EC_PARAMS,
+                    pValue: oid.as_ptr().cast(),
+                    ulValueLen: oid.len().try_into().expect("usize -> CK_ULONG"),
+                },
+                cka_id_attrib,
+            ];
+
+            let private_key_template = vec![cka_id_attrib];
 
             self.generate_key_pair_inner(
                 pkcs11_sys::CKM_EC_KEY_PAIR_GEN,
@@ -811,8 +823,15 @@ impl Session {
         ),
         GenerateKeyPairError,
     > {
+        let cka_id = rand::thread_rng().gen::<[u8; 16]>();
         unsafe {
             let exponent = exponent.to_vec();
+
+            let cka_id_attrib = pkcs11_sys::CK_ATTRIBUTE_IN {
+                r#type: pkcs11_sys::CKA_ID,
+                pValue: cka_id.as_ptr().cast(),
+                ulValueLen: cka_id.len().try_into().expect("usize -> CK_ULONG"),
+            };
 
             let public_key_template = vec![
                 pkcs11_sys::CK_ATTRIBUTE_IN {
@@ -827,9 +846,10 @@ impl Session {
                     pValue: exponent.as_ptr().cast(),
                     ulValueLen: exponent.len().try_into().expect("usize -> CK_ULONG"),
                 },
+                cka_id_attrib,
             ];
 
-            let private_key_template = vec![];
+            let private_key_template = vec![cka_id_attrib];
 
             self.generate_key_pair_inner(
                 pkcs11_sys::CKM_RSA_PKCS_KEY_PAIR_GEN,
